@@ -39,13 +39,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Создание комнаты
 async def create_room(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user  # Получаем пользователя, который создает комнату
     room_code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
     rooms[room_code] = {
-        "players": [],
+        "players": [{"id": user.id, "name": user.first_name}], # Добавляем создателя комнаты сразу
         "characteristics": {},
         "game_started": False,
     }
+
+    user_rooms[user.id] = room_code  # Записываем связь пользователя с комнатой
 
     await update.message.reply_text(
         f"Комната создана! Код комнаты: {room_code}\n"
