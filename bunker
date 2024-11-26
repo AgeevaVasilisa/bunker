@@ -283,6 +283,7 @@ def main():
     app.add_handler(CommandHandler("startgame", start_game))
     app.add_handler(CommandHandler("myinfo", my_info))
     app.add_handler(CommandHandler("end_game", end_game))
+    app.add_handler(CommandHandler("kick_player", kick_player))
 
     print("Бот запущен. Нажмите Ctrl+C для остановки.")
     app.run_polling()
