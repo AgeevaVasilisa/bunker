@@ -106,20 +106,20 @@ async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Вы не присоединились ни к одной комнате.")
         return
 
-        room_code = user_rooms[user.id]
-        room = rooms[room_code]
+    room_code = user_rooms[user.id]  # Исправленный отступ
+    room = rooms[room_code]
 
-        if not room["players"]:
-            await update.message.reply_text("В комнате пока нет игроков.")
-            return
+    if not room["players"]:
+        await update.message.reply_text("В комнате пока нет игроков.")
+        return
 
-        player_names = [player["name"] for player in room["players"]]
-        player_list = "\n".join(player_names)
-        await update.message.reply_text(
-            f"Комната {room_code}:\n"
-            f"Количество игроков: {len(room['players'])}\n"
-            f"Список игроков:\n{player_list}"
-        )
+    player_names = [player["name"] for player in room["players"]]
+    player_list = "\n".join(player_names)
+    await update.message.reply_text(
+        f"Комната {room_code}:\n"
+        f"Количество игроков: {len(room['players'])}\n"
+        f"Список игроков:\n{player_list}"
+    )
 
 # Начало игры
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,7 +200,7 @@ async def my_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# Выгнать игрока из комнаты (НЕ работает)
+# Выгнать игрока из комнаты
 async def kick_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global rooms, user_rooms
 
