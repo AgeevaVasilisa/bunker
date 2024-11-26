@@ -2,22 +2,15 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import random
 import string
+import json
 
 # Глобальные данные для всех игр
 rooms = {}
 user_rooms = {}  # Связь пользователя с его текущей комнатой (user_id -> room_code)
 
 # Характеристики для игроков
-characteristics_pool = {
-    "job": ["Доктор", "Инженер", "Повар", "Ученый", "Фермер"],
-    "health": ["Полностью здоров", "Инвалидность", "Астма", "Беременность"],
-    "hobby": ["Шахматы", "Рыбалка", "Чтение", "Спорт", "Программирование"],
-    "baggage": ["Аптечка", "Нож", "Семена растений", "Книга о выживании", "Гитара"],
-    "phobias": ["Страх высоты", "Страх темноты", "Страх воды", "Страх насекомых"],
-    "character": ["Добрый", "Агрессивный", "Спокойный", "Пессимистичный", "Оптимистичный"],
-    "extra_info": ["Хирургический опыт", "Может готовить на открытом огне", "Выжил в пустыне", "Говорит на 5 языках"],
-    "gender": ["Мужчина", "Женщина"],
-}
+with open('characteristics.json', 'r', encoding='utf-8') as f:
+    characteristics_pool = json.load(f)
 
 
 # Команда /start
@@ -39,7 +32,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/startgame - Начать игру\n"
         "/myinfo - Показать свои характеристики\n"
         "/end_game - Завершить игру\n"
-        "/help - Показать список всех команд"
+        "/help - Показать список всех команд\n"
+        "/kick_player <имя> - Выгнать игрока из комнаты"
     )
 
 
@@ -153,7 +147,7 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "health": random.choice(characteristics_pool["health"]),
             "hobby": random.choice(characteristics_pool["hobby"]),
             "baggage": random.choice(characteristics_pool["baggage"]),
-            "age": random.randint(1, 100),
+            "age": random.randint(7, 110),
             "phobia": random.choice(characteristics_pool["phobias"]),
             "character": random.choice(characteristics_pool["character"]),
             "extra_info": random.choice(characteristics_pool["extra_info"]),
@@ -166,7 +160,8 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=player["id"],
-                text=f"Игра в комнате {room_code} началась! Используйте команду /myinfo, чтобы узнать свои характеристики."
+                text=f"Игра в комнате {room_code} началась! Используйте команду /myinfo, чтобы узнать свои \
+                характеристики."
             )
         except Exception as e:
             print(f"Ошибка отправки сообщения игроку {player['id']}: {e}")
@@ -200,6 +195,49 @@ async def my_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Характер: {characteristics['character']}\n"
         f"Доп. информация: {characteristics['extra_info']}"
     )
+
+
+# Выгнать игрока из комнаты NOO
+async def kick_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global rooms, user_rooms
+
+    user = update.message.from_user
+    if user.id not in user_rooms:
+        await update.message.reply_text("Вы не присоединились ни к одной комнате.")
+        return
+
+    room_code = user_rooms[user.id]
+    room = rooms[room_code]
+
+    # Проверяем, является ли пользователь администратором (создателем комнаты)
+    if room["players"][0]["id"] != user.id:
+        await update.message.reply_text("Только создатель комнаты может выгонять игроков.")
+        return
+
+    if len(context.args) < 1:
+        await update.message.reply_text("Пожалуйста, укажите имя игрока, которого хотите выгнать.")
+        return
+
+    player_name_to_kick = " ".join(context.args)
+
+    # Ищем игрока по имени
+    player_to_kick = next((player for player in room["players"] if player["name"] == player_name_to_kick), None)
+
+    if not player_to_kick:
+        await update.message.reply_text(f"Игрок с именем '{player_name_to_kick}' не найден в комнате.")
+        return
+
+    # Удаляем игрока из комнаты
+    room["players"].remove(player_to_kick)
+
+    # Уведомляем всех игроков о том, что игрок был выгнан
+    for player in room["players"]:
+        await context.bot.send_message(
+            chat_id=player["id"],
+            text=f"{player_name_to_kick} был выгнан из комнаты {room_code}."
+        )
+
+    await update.message.reply_text(f"{player_name_to_kick} был выгнан из комнаты {room_code}.")
 
 # Завершение игры
 async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
