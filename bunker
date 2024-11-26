@@ -200,7 +200,7 @@ async def my_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# Выгнать игрока из комнаты NOO
+# Выгнать игрока из комнаты (НЕ работает)
 async def kick_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global rooms, user_rooms
 
