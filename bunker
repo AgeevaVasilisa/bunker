@@ -1,0 +1,251 @@
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import random
+import string
+
+# Глобальные данные для всех игр
+rooms = {}
+user_rooms = {}  # Связь пользователя с его текущей комнатой (user_id -> room_code)
+
+# Характеристики для игроков
+characteristics_pool = {
+    "job": ["Доктор", "Инженер", "Повар", "Ученый", "Фермер"],
+    "health": ["Полностью здоров", "Инвалидность", "Астма", "Беременность"],
+    "hobby": ["Шахматы", "Рыбалка", "Чтение", "Спорт", "Программирование"],
+    "baggage": ["Аптечка", "Нож", "Семена растений", "Книга о выживании", "Гитара"],
+    "phobias": ["Страх высоты", "Страх темноты", "Страх воды", "Страх насекомых"],
+    "character": ["Добрый", "Агрессивный", "Спокойный", "Пессимистичный", "Оптимистичный"],
+    "extra_info": ["Хирургический опыт", "Может готовить на открытом огне", "Выжил в пустыне", "Говорит на 5 языках"],
+    "gender": ["Мужчина", "Женщина"],
+}
+
+
+# Команда /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Привет! Это игра «Бункер». Используйте текстовые команды для управления.\n"
+        "Введите /help, чтобы увидеть список доступных команд."
+    )
+
+
+# Команда /help
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Список доступных команд:\n"
+        "/start - Начать взаимодействие с ботом\n"
+        "/create_room - Создать комнату\n"
+        "/join_room <код> - Присоединиться к комнате\n"
+        "/players - Показать игроков в комнате\n"
+        "/startgame - Начать игру\n"
+        "/myinfo - Показать свои характеристики\n"
+        "/end_game - Завершить игру\n"
+        "/help - Показать список всех команд"
+    )
+
+
+# Создание комнаты
+async def create_room(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    room_code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    rooms[room_code] = {
+        "players": [],
+        "characteristics": {},
+        "game_started": False,
+    }
+
+    await update.message.reply_text(
+        f"Комната создана! Код комнаты: {room_code}\n"
+        "Передайте этот код другим игрокам, чтобы они могли присоединиться."
+    )
+
+
+# Присоединение к комнате
+async def join_room(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global rooms, user_rooms
+
+    if len(context.args) < 1:
+        await update.message.reply_text("Пожалуйста, укажите код комнаты после команды, например: /join_room ABC123")
+        return
+
+    room_code = context.args[0].strip().upper()
+    if room_code not in rooms:
+        await update.message.reply_text("Код комнаты неверен или комната не существует.")
+        return
+
+    room = rooms[room_code]
+    user = update.message.from_user
+
+    if room["game_started"]:
+        await update.message.reply_text("Игра в этой комнате уже началась. Вы не можете присоединиться.")
+        return
+
+    # Проверяем, если пользователь уже присоединился
+    if user.id in [player["id"] for player in room["players"]]:
+        await update.message.reply_text("Вы уже присоединились к этой комнате!")
+        return
+
+    # Добавляем игрока в комнату и записываем связь пользователя с комнатой
+    room["players"].append({"id": user.id, "name": user.first_name})
+    user_rooms[user.id] = room_code
+
+    # Уведомляем всех игроков в комнате
+    player_names = [player["name"] for player in room["players"]]
+    player_list = "\n".join(player_names)
+    for player in room["players"]:
+        await context.bot.send_message(
+            chat_id=player["id"],
+            text=f"{user.first_name} присоединился к комнате {room_code}!\n"
+                 f"Всего игроков: {len(room['players'])}\n"
+                 f"Список игроков:\n{player_list}"
+        )
+
+
+# Просмотр игроков в комнате
+async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global rooms, user_rooms
+
+    user = update.message.from_user
+    if user.id not in user_rooms:
+        await update.message.reply_text("Вы не присоединились ни к одной комнате.")
+        return
+
+        room_code = user_rooms[user.id]
+        room = rooms[room_code]
+
+        if not room["players"]:
+            await update.message.reply_text("В комнате пока нет игроков.")
+            return
+
+        player_names = [player["name"] for player in room["players"]]
+        player_list = "\n".join(player_names)
+        await update.message.reply_text(
+            f"Комната {room_code}:\n"
+            f"Количество игроков: {len(room['players'])}\n"
+            f"Список игроков:\n{player_list}"
+        )
+
+# Начало игры
+async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global rooms, user_rooms
+
+    user = update.message.from_user
+    if user.id not in user_rooms:
+        await update.message.reply_text("Вы не присоединились ни к одной комнате.")
+        return
+
+    room_code = user_rooms[user.id]
+    room = rooms[room_code]
+
+    if len(room["players"]) < 2:
+        await update.message.reply_text("Недостаточно игроков для начала игры. Нужно минимум 2.")
+        return
+
+    if room["game_started"]:
+        await update.message.reply_text("Игра уже началась в этой комнате.")
+        return
+
+    room["game_started"] = True
+
+    # Генерация характеристик для каждого игрока
+    for player in room["players"]:
+        characteristics = {
+            "job": random.choice(characteristics_pool["job"]),
+            "health": random.choice(characteristics_pool["health"]),
+            "hobby": random.choice(characteristics_pool["hobby"]),
+            "baggage": random.choice(characteristics_pool["baggage"]),
+            "age": random.randint(1, 100),
+            "phobia": random.choice(characteristics_pool["phobias"]),
+            "character": random.choice(characteristics_pool["character"]),
+            "extra_info": random.choice(characteristics_pool["extra_info"]),
+            "gender": random.choice(characteristics_pool["gender"]),
+        }
+        room["characteristics"][player["id"]] = characteristics
+
+    # Уведомляем всех игроков о начале игры
+    for player in room["players"]:
+        try:
+            await context.bot.send_message(
+                chat_id=player["id"],
+                text=f"Игра в комнате {room_code} началась! Используйте команду /myinfo, чтобы узнать свои характеристики."
+            )
+        except Exception as e:
+            print(f"Ошибка отправки сообщения игроку {player['id']}: {e}")
+
+# Характеристики игрока
+async def my_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global rooms, user_rooms
+
+    user = update.message.from_user
+    if user.id not in user_rooms:
+        await update.message.reply_text("Вы не присоединились ни к одной комнате.")
+        return
+
+    room_code = user_rooms[user.id]
+    room = rooms[room_code]
+
+    if user.id not in room["characteristics"]:
+        await update.message.reply_text("Вы не участвуете в этой игре.")
+        return
+
+    characteristics = room["characteristics"][user.id]
+    await update.message.reply_text(
+        f"Ваши характеристики:\n"
+        f"Пол: {characteristics['gender']}\n"
+        f"Возраст: {characteristics['age']}\n"
+        f"Профессия: {characteristics['job']}\n"
+        f"Здоровье: {characteristics['health']}\n"
+        f"Хобби: {characteristics['hobby']}\n"
+        f"Багаж: {characteristics['baggage']}\n"
+        f"Фобия: {characteristics['phobia']}\n"
+        f"Характер: {characteristics['character']}\n"
+        f"Доп. информация: {characteristics['extra_info']}"
+    )
+
+# Завершение игры
+async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global rooms, user_rooms
+
+    user = update.message.from_user
+    if user.id not in user_rooms:
+        await update.message.reply_text("Вы не присоединились ни к одной комнате.")
+        return
+
+    room_code = user_rooms[user.id]
+    room = rooms[room_code]
+
+    if not room["game_started"]:
+        await update.message.reply_text("Игра в этой комнате еще не началась.")
+        return
+
+    # Завершаем игру
+    room["game_started"] = False
+
+    # Уведомляем всех игроков о  завершении игры
+    for player in room["players"]:
+        try:
+            await context.bot.send_message(
+                chat_id=player["id"],
+                text=f"Игра в комнате {room_code} закончилась!"
+            )
+        except Exception as e:
+            print(f"Ошибка отправки сообщения игроку {player['id']}: {e}")
+def main():
+    TOKEN = "8112343279:AAHPVO-CFjDeEr9tPvoAUHAJeU4o9icf_Zg"
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("create_room", create_room))
+    app.add_handler(CommandHandler("join_room", join_room))
+    app.add_handler(CommandHandler("players", players))
+    app.add_handler(CommandHandler("startgame", start_game))
+    app.add_handler(CommandHandler("myinfo", my_info))
+    app.add_handler(CommandHandler("end_game", end_game))
+
+    print("Бот запущен. Нажмите Ctrl+C для остановки.")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
